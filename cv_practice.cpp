@@ -12,6 +12,25 @@ namespace cv
 
 //./cv_practice /mnt/c/Users/Sasha/Downloads/tennisball2.jpg
 
+Mat color_corrected(Mat img)
+{
+    Mat lab_img;
+    cvtColor(img, lab_img, CV_BGR2Lab);
+    vector<Mat> lab_planes(3);
+    split(lab_img, lab_planes);
+
+    Ptr<CLAHE> clahe = createCLAHE();
+    clahe->setClipLimit(4);
+    Mat dst;
+    clahe->apply(lab_planes[0], dst);
+    dst.copyTo(lab_planes[0]);
+    merge(lab_planes, lab_img);
+
+    Mat corrected;
+    cvtColor(lab_img, corrected, CV_Lab2BGR);
+    return(corrected);
+}
+
 Mat threshold_image(Mat img)
 {
     Mat hsv(img.rows, img.cols, CV_8UC3);
@@ -35,6 +54,7 @@ Mat morphed_img(Mat mask)
 
 Mat overall_filter(Mat img)
 {
+//    Mat corrected = color_corrected(img);
     Mat mask = threshold_image(img);
     Mat filtered = morphed_img(mask);
     return(filtered);
@@ -130,6 +150,9 @@ int main(int argc, char** argv)
 	return -1; 
 
 //    hough_circles_identifier(src);
+//    namedWindow("Connected Components Transform", CV_WINDOW_AUTOSIZE);
+//    imshow("Connected Components Transform", color_corrected(src));
+
     connected_components_identifier(src);
     waitKey(0);
     return 0;
