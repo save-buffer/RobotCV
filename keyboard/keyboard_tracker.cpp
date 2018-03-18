@@ -266,6 +266,32 @@ void laplacian_keyboard_identifier(Mat src)
     imshow("Morphology", orig);
 }
 
+bool filter_rectangles(Rect r, Size size)
+{
+    float width_ratio = (float)r.width / (float)(size.width);
+    float height_ratio = (float)r.height / (float)(size.height);
+
+    return(0.01f < width_ratio && width_ratio < 0.5f &&
+	   0.05 < height_ratio && height_ratio < 0.2f);
+}    
+
+void join_overlapping_rectangles(vector<Rect> &rects)
+{
+    for(int i = 0; i < rects.size() - 1; i++)
+    {
+	for(int j = i + 1; j < rects.size(); j++)
+	{
+	    Rect intersection = rects[i] & rects[j];
+	    Rect minimum_enclosing = rects[i] | rects[j];
+	    if(intersection.area() > 0)
+	    {
+		rects[i] = minimum_enclosing;
+		rects.erase(rects.begin() + j--);
+	    }
+	}
+    }
+}
+
 Mat src;
 Mat gray_orig;
 Mat gray;
@@ -340,15 +366,23 @@ void contour_keyboard_tracker()
     components = connectedComponents(gray_contours, key_image);
     printf("found %d components\n", components);
 
+    vector<Rect> keys;
     Mat color_orig(src);
     for(int i = 1; i < components; i++)
     {
 	Mat component_i;
 	inRange(key_image, Scalar(i), Scalar(i), component_i);
 	Rect r = boundingRect(component_i);
+	if(filter_rectangles(r, src.size()))
+	{
+	    keys.push_back(r);
+	}
+    }
+    join_overlapping_rectangles(keys);
+    for(Rect &r : keys)
+    {
 	rectangle(color_orig, r.tl(), r.br(), Scalar(0, 0, 255), 1);
     }
-
     
     namedWindow("Contours");
     namedWindow("Gray");
@@ -381,7 +415,10 @@ int main(int argc, char** argv)
 {
     /// Read the image
     src = imread(argv[1], 1);
-    
+/*    float aspect_ratio = (float)src.rows / (float)src.cols;
+    int target_x = 800;
+    int target_y = (int)(target_x * aspect_ratio);
+    resize(src, src, Size(target_x, target_y), 0, 0, CV_INTER_AREA);*/
     if(!src.data)
 	return(-1);
 
