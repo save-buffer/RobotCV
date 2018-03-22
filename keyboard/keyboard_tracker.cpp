@@ -12,134 +12,6 @@ namespace cv
 }
 
 //./keyboard_tracker /mnt/c/Users/Sasha/Downloads/keyboard.png
-
-Mat color_corrected(Mat img)
-{
-    Mat lab_img;
-    cvtColor(img, lab_img, CV_BGR2Lab);
-    vector<Mat> lab_planes(3);
-    split(lab_img, lab_planes);
-
-    Ptr<CLAHE> clahe = createCLAHE();
-    clahe->setClipLimit(4);
-    Mat dst;
-    clahe->apply(lab_planes[0], dst);
-    dst.copyTo(lab_planes[0]);
-    merge(lab_planes, lab_img);
-
-    Mat corrected;
-    cvtColor(lab_img, corrected, CV_Lab2BGR);
-    return(corrected);
-}
-
-Mat threshold_image(Mat img)
-{
-    Mat hsv(img.rows, img.cols, CV_8UC3);
-    cvtColor(img, hsv, CV_BGR2HSV);
-    Mat thresh(img.rows, img.cols, CV_8UC1);
-    inRange(hsv, Scalar(0.11 * 256, 0.60 * 256, 0.20 * 256), Scalar(0.14 * 256, 1.0 * 255.0, 1.0 * 256), thresh);
-    return(thresh);
-}
-
-Mat morphed_img(Mat mask)
-{
-    Mat se21 = getStructuringElement(MORPH_RECT, Size(21, 21));
-    Mat se11 = getStructuringElement(MORPH_RECT, Size(11, 11));
-
-    morphologyEx(mask, mask, MORPH_CLOSE, se21);
-    morphologyEx(mask, mask, MORPH_OPEN, se11);
-
-    GaussianBlur(mask, mask, Size(15, 15), 0, 0);
-    return(mask);   
-}
-
-Mat overall_filter(Mat img)
-{
-//    Mat corrected = color_corrected(img);
-    Mat mask = threshold_image(img);
-    Mat filtered = morphed_img(mask);
-    return(filtered);
-}
-
-void hough_circles_identifier(Mat src)
-{
-    Mat hough_in = overall_filter(src);
-    vector<Vec3f> circles;
-    /// Apply the Hough Transform to find the circles
-    HoughCircles(hough_in, circles, CV_HOUGH_GRADIENT, 1.1, hough_in.rows/10, 100, 40, 0, 0);
-
-    printf("circles: %lu\n", circles.size());
-    /// Draw the circles detected
-    for(size_t i = 0; i < circles.size(); i++)
-    {
-	Point center(cvRound(circles[i][0]), cvRound(circles[i][1]));
-	int radius = cvRound(circles[i][2]);
-	// circle center
-	circle(src, center, 3, Scalar(0,255,0), -1, 8, 0);
-	// circle outline
-	circle(src, center, radius, Scalar(0, 0, 255), 3, 8, 0);
-    }
-
-    /// Show your results
-    namedWindow("Hough Circle Transform Demo", CV_WINDOW_AUTOSIZE);
-    imshow("Hough Circle Transform Demo", hough_in);
-}
-
-/*
-  take your post-processed images and get the connected components, draw a bounding square around them,
-  take the inscribed circle of the bounding square, then calculate a coverage overlap
-  that will give you a "percent like a circle" metric
-  and you can tune that threshold to whatever is best for your application
- */
-void connected_components_identifier(Mat src)
-{
-    Mat filtered = overall_filter(src);
-    Mat labels;
-    int components = connectedComponents(filtered, labels);
-    printf("%d connected components\n", components);
-    vector<Rect> rectangles;
-    for(int i = 1; i < components; i++)
-    {
-	Mat component_i;
-	inRange(labels, Scalar(i), Scalar(i), component_i);
-	Rect r = boundingRect(component_i);
-	
-	Point center = (r.tl() + r.br()) / 2;
-	int radius = abs(r.tl().y - center.y);
-	Mat circ(component_i.size(), component_i.type());
-	circ = Scalar(0, 0, 0);
-	circle(circ, center, radius, i, -1);
-
-	Mat intersection;
-	bitwise_and(circ, component_i, intersection);
-	Mat union_;
-	bitwise_or(circ, component_i, union_);
-
-	printf("intersection: %d\n", countNonZero(intersection));
-	printf("union: %d\n", countNonZero(union_));
-
-	float iou = (float)countNonZero(intersection) / (float)countNonZero(union_);
-
-	printf("%.3f iou\n", iou);
-
-#define CIRCLE_THRESH 0.8f
-
-	if(iou >= CIRCLE_THRESH)
-	    rectangles.push_back(r);
-
-#undef CIRCLE_THRESH
-    }
-
-    for(Rect r : rectangles)
-    {
-	rectangle(src, r.tl(), r.br(), Scalar(255, 0, 0), 1);
-    }
-    
-    normalize(labels, labels, 0, 255, NORM_MINMAX, CV_8U);
-    namedWindow("Connected Components Transform", CV_WINDOW_AUTOSIZE);
-    imshow("Connected Components Transform", src);
-}
-
 Mat fft(Mat gray)
 {
     Mat fft;
@@ -275,6 +147,7 @@ bool filter_rectangles(Rect r, Size size)
 	   0.05 < height_ratio && height_ratio < 0.2f);
 }    
 
+//TODO(sasha): optimize?
 void join_overlapping_rectangles(vector<Rect> &rects)
 {
     for(int i = 0; i < rects.size() - 1; i++)
@@ -322,14 +195,25 @@ void contour_keyboard_tracker()
 
     Mat gray_contours;
     cvtColor(contour_img, gray_contours, COLOR_BGR2GRAY);
+
+    //we map 800x300 to 1
+    float se_proportion = src.cols / 800.0f;
+
+    int _1 = 1 * se_proportion;
+    int _3 = 3 * se_proportion;
+    int _5 = 5 * se_proportion;
+    int _7 = 7 * se_proportion;
+    int _9 = 9 * se_proportion;
+    int _11 = 11 * se_proportion;
+    int _13 = 13 * se_proportion;
     
-    Mat se1 = getStructuringElement(MORPH_RECT, Size(1, 1));
-    Mat se3 = getStructuringElement(MORPH_RECT, Size(3, 3));
-    Mat se5 = getStructuringElement(MORPH_RECT, Size(5, 5));
-    Mat se7 = getStructuringElement(MORPH_RECT, Size(7, 7));
-    Mat se9 = getStructuringElement(MORPH_RECT, Size(9, 9));
-    Mat se11 = getStructuringElement(MORPH_RECT, Size(11, 11));
-    Mat se13 = getStructuringElement(MORPH_RECT, Size(13, 13));
+    Mat se1 = getStructuringElement(MORPH_RECT, Size(_1, _1));
+    Mat se3 = getStructuringElement(MORPH_RECT, Size(_3, _3));
+    Mat se5 = getStructuringElement(MORPH_RECT, Size(_5, _5));
+    Mat se7 = getStructuringElement(MORPH_RECT, Size(_7, _7));
+    Mat se9 = getStructuringElement(MORPH_RECT, Size(_9, _9));
+    Mat se11 = getStructuringElement(MORPH_RECT, Size(_11, _11));
+    Mat se13 = getStructuringElement(MORPH_RECT, Size(_13, _13));
     
     morphologyEx(gray_contours, gray_contours, MORPH_DILATE, se5);
 //    morphologyEx(gray_contours, gray_contours, MORPH_ERODE, se3);
