@@ -3,6 +3,7 @@
 #include <iostream>
 #include <stdio.h>
 #include <unordered_map>
+#include "neural_net.cpp"
 
 using namespace cv;
 //For compatibility with opencv2
@@ -297,12 +298,13 @@ void blur_callback(int, void *)
 
 int main(int argc, char** argv)
 {
+#if 0
     /// Read the image
     src = imread(argv[1], 1);
 /*    float aspect_ratio = (float)src.rows / (float)src.cols;
-    int target_x = 800;
-    int target_y = (int)(target_x * aspect_ratio);
-    resize(src, src, Size(target_x, target_y), 0, 0, CV_INTER_AREA);*/
+      int target_x = 800;
+      int target_y = (int)(target_x * aspect_ratio);
+      resize(src, src, Size(target_x, target_y), 0, 0, CV_INTER_AREA);*/
     if(!src.data)
 	return(-1);
 
@@ -318,5 +320,14 @@ int main(int argc, char** argv)
 //    keyboard_identifier(src);
     
     waitKey(0);
+#else
+    auto data_pair = read_data("data.yml");
+    auto data = data_pair.first;
+    auto filenames = data_pair.second;
+    for(const auto &pair : data)
+	cout << pair.first << endl;
+    for(int i = 0; i < 10; i++)
+	cout << filenames[i] << endl;
+#endif
     return(0);
 }
