@@ -207,14 +207,49 @@ pair<unordered_map<string, Mat>, vector<string> > read_data(string filename)
 enum LayerType
 {
     LayerConv,
-    LayerFullyConnected,
+    LayerFullyConnected,    
+};
+
+enum ActivationType
+{
+    ActivationRelu,
 };
 
 struct layer
 {
     LayerType type;
+    ActivationType activation;
     vector<vector<Mat> > filters; //If it's fully connected, there'll just be one entry
+    vector<Mat> bias;
 };
+
+void relu(Mat &m)
+{
+    m.setTo(0, m < 0);
+}
+
+Mat relu_grad(Mat activation)
+{
+    return(activation > 0);
+}
+
+void activation_function(Mat &m, ActivationType activation)
+{
+    switch(activation)
+    {
+    case ActivationRelu:
+	relu(m);
+    }
+}
+
+Mat grad_activation_function(Mat &m, ActivationType activation)
+{
+    switch(activation)
+    {
+    case ActivationRelu:
+	return(relu_grad(m));
+    }
+}
 
 vector<Mat> convolve(const vector<Mat> &inputs, const vector<vector<Mat> > &filters)
 {
@@ -231,6 +266,21 @@ vector<Mat> convolve(const vector<Mat> &inputs, const vector<vector<Mat> > &filt
 	result.push_back(out);
     }
     return(result);
+}
+
+pair<vector<Mat>, vector<Mat> > conv_layer(const vector<Mat> &inputs, const layer &l)
+{
+    auto zs = convolve(inputs, l.filters);
+    vector<Mat> as;
+    //TODO(sasha): assert that result.size() == l.bias.size()
+    for(int i = 0; i < zs.size(); i++)
+    {
+	Mat a = zs[i].clone();
+	activation_function(a, l.activation);
+	a += l.bias[i];
+	as.push_back(a);
+    }
+    return(make_pair(as, zs));
 }
 
 vector<vector<Mat> > conv_grad(const vector<Mat> &activation, const vector<vector<Mat> > &filters)
@@ -255,7 +305,7 @@ vector<vector<Mat> > conv_grad(const vector<Mat> &activation, const vector<vecto
     return(result);
 }
 
-vector<Mat> fully_connected(const vector<Mat> &inputs, const Mat weights)
+vector<Mat> fully_connected(const vector<Mat> &inputs, const Mat &weights)
 {
     Mat unrolled;
     vector<Mat> result;
@@ -263,42 +313,97 @@ vector<Mat> fully_connected(const vector<Mat> &inputs, const Mat weights)
 	unrolled.push_back(i.reshape(1));
 
     unrolled = unrolled * weights;
-    unrolled.setTo(0, unrolled < 0); //relu
     result.push_back(unrolled);
     return(result);
 }
 
-Mat relu_grad(Mat activation)
+pair<vector<Mat>, vector<Mat> > fully_connected_layer(const vector<Mat> &inputs, const layer &l)
 {
-    return(activation > 0);
+    auto zs = fully_connected(inputs, l.filters[0][0]);
+    vector<Mat> as;
+    Mat a = zs[0].clone();
+    activation_function(a, l.activation);
+    a += l.bias[0];
+    as.push_back(a);  
+
+    return(make_pair(as, zs));
 }
 
-vector<vector<Mat> > for_prop(const vector<Mat> &input, const vector<layer> &layers)
+vector<Mat> fully_connected_delta(const vector<Mat> &prev_error, const layer &prev_layer, const vector<Mat> &z, const layer &l)
+{
+    vector<Mat> result;
+    Mat delta = prev_layer.weights[0].t() * prev_err[0];
+    result.push_back(delta);
+    return(result);
+}
+
+pair<vector<Mat>, vector<Mat> > execute_layer(const vector<Mat> &inputs, const layer &l)
+{
+    switch(l.type)
+    {
+    case LayerFullyConnected:
+	return(fully_connected_layer(inputs, l));
+    case LayerConv:
+	return(conv_layer(inputs, l));
+    }
+    return(make_pair(vector<Mat>(), vector<Mat>()));
+}
+
+vector<Mat> layer_grad(const vector<Mat> &prev_error, const layer &prev_layer, const vector<Mat> &z, const layer &l)
+{
+    switch(prev_layer.type)
+    {
+    case LayerFullyConnected:
+	return(fully_connected_grad(prev_error, prev_layer, z, l));
+	
+    }
+}
+
+vector<Mat> layer_delta(const vector<Mat> &prev_error, const layer &l)
+{
+    switch(l.type)
+    {
+    case LayerFullyConnected:
+	return(fully_connected_grad(prev_error, l));
+	
+    }
+
+}
+
+pair<vector<vector<Mat> >, vector<vector<Mat> > > for_prop(const vector<Mat> &input, const vector<layer> &layers)
 {
     vector<vector<Mat> > activations;
+    vector<vector<Mat> > zs;
     activations.push_back(input);
     for(int i = 0; i < layers.size(); i++)
     {
-	vector<Mat> act;
-	switch(layers[i].type)
-	{
-	case LayerConv:
-	    act = convolve(activations[i], layers[i].filters); //activations[i] is the input into layers[i]
-	    break;
-	case LayerFullyConnected:
-	    act = fully_connected(activations[i], layers[i].filters[0][0]);
-	    break;
-	}
-	activations.push_back(act);
+	auto act = execute_layer(activations[i], layers[i]);
+	activations.push_back(act.first);
+	zs.push_back(act.second);
     }
-    return(activations);
+    return(make_pair(activations, zs));
 }
 
-void back_prop(const vector<Mat> &input, vector<layer> &layers, int actual_class, int num_classes)
+void back_prop(const vector<Mat> &input, vector<layer> &layers, vector<Mat> expected_output)
 {
-    vector<vector<Mat> > activations = for_prop(input, layers);
-    Mat y_actual(num_classes, 1, CV_32FC1, Scalar(0));
-    y_actual.at<float>(actual_class) = 1;
+    auto prop = for_prop(input, layers);
+    auto activations = prop.first;
+    auto zs = prop.second;
+
+    vector<vector<Mat> > errors(layers.size());
+
+    auto output = activations.back();
+    for(int i = 0; i < expected_output.size(); i++)
+    {
+	Mat delta = expected_output[i] - output[i];
+	Mat final_act_grad = grad_activation_function(zs.back(), layers.back().activation);
+	errors.back().push_back(delta.mul(final_act_grad));
+    }
+
+    for(int i = errors.size() - 2; i >= 0; i--)
+    {
+	
+    }
 
     vector<vector<vector<Mat> > > grads(layers.size());
     Mat error = y_actual - activations.back()[0];
@@ -331,7 +436,7 @@ void back_prop(const vector<Mat> &input, vector<layer> &layers, int actual_class
 	case LayerConv:
 	{
 	    vector<vector<Mat> > grad = conv_grad(activations[i], layers[i].filters);
-	    grads[i] = 
+//	    grads[i] = 
 	} break;
 	case LayerFullyConnected:	    
 	    break;
