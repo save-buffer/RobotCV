@@ -328,6 +328,7 @@ int main(int argc, char** argv)
 	cout << pair.first << endl;
     for(int i = 0; i < 10; i++)
 	cout << filenames[i] << endl;
+    cnn_model();
 #endif
     return(0);
 }

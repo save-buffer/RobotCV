@@ -37,25 +37,40 @@ pair<unordered_map<string, Mat>, vector<string> > read_data(string filename)
     return(make_pair(matrices, filenames));
 }
 
-TF_Operation *placeholder(TF_Graph *graph, TF_Status *s, const char *name,
-			  TF_DataType type, const int64_t *dims, int num_dims)
+TF_Operation *placeholder(TF_Graph *graph, TF_Status *s, const char *name, TF_DataType dtype)
 {
     TF_OperationDescription *desc = TF_NewOperation(graph, "Placeholder", name);
-    TF_SetAttrType(desc, "dtype", type);
-    if(dims)
-	TF_SetAttrShape(desc, "shape", dims, num_dims);
-    return(TF_FinishOperation(desc, s));	
-}
-
-TF_Operation *resize(TF_Graph *graph, TF_Status *s, const char *name,
-		     const int64_t *dims, int num_dims)
-{
-    TF_OperationDescription *desc = TF_NewOperation(graph, "Resize", name);
-    TF_SetAttrShape(desc, "shape", dims, num_dims);
-    TF_Output input;
-    TF_AddInput(desc, input);
+    TF_SetAttrType(desc, "dtype", dtype);
     return(TF_FinishOperation(desc, s));
 }
+
+TF_Operation *reshape(TF_Graph *graph, TF_Status *s, const char *name,
+		      TF_Operation *x, const int64_t *dims, int num_dims)
+{
+    TF_OperationDescription *desc = TF_NewOperation(graph, "Reshape", name);
+    TF_Output input = {x, 0};
+    TF_AddInput(desc, input);
+    TF_SetAttrShape(desc, "shape", dims, num_dims);
+    return(TF_FinishOperation(desc, s));
+}
+
+TF_Operation *conv2d(TF_Graph *graph, TF_Status *s, const char *name,
+		     TF_Operation *x, int64_t filters, const int64_t *kernel_size,
+		     const int64_t *strides = nullptr, const char *padding = "valid")
+{
+    TF_OperationDescription *desc = TF_NewOperation(graph, "Conv2D", name);
+    TF_Output input = {x, 0};
+    TF_AddInput(desc, input);
+    TF_SetAttrInt(desc, "filters", filters);
+    TF_SetAttrString(desc, "kernel_size", kernel_size, sizeof(int64_t) * 2);
+    int64_t default_strides[] = { 1, 1 };
+    if(strides == nullptr)
+	strides = default_strides;
+    TF_SetAttrString(desc, "strides", strides, sizeof(int64_t) * 2);
+    TF_SetAttrString(desc, "padding", padding, strlen(padding));
+    return(TF_FinishOperation(desc, s));
+}
+		     
 
 TF_Tensor *uint8_tensor(const int64_t *dims, int num_dims, uint64_t len)
 {
@@ -66,12 +81,15 @@ TF_Tensor *uint8_tensor(const int64_t *dims, int num_dims, uint64_t len)
     return(TF_AllocateTensor(TF_UINT8, dims, num_dims, sizeof(uint8_t) * len));
 }
 
-TF_Graph *cnn_model(TF_Tensor *input, TF_Tensor *labels)
+TF_Graph *cnn_model()
 {
     TF_Graph *graph = TF_NewGraph();
     TF_Status *s = TF_NewStatus();
-    int64_t feed_dim[] = { -1, 28, 28, 3 };
-    TF_Operation *resized_input = resize(graph, s, "resize", feed_dim, 4);    
+    int64_t resize_dim[] = { -1, 28, 28, 3 };
+    TF_Operation *input = placeholder(graph, s, "input", TF_UINT8);
+    TF_Operation *resized_input = reshape(graph, s, "resize", input, resize_dim, 4);
+    int64_t kernel_size[] = { 5, 5 };
+    TF_Operation *layer1 = conv2d(graph, s, "layer1", resized_input, 32, kernel_size, nullptr, "same");
 }
 
 TF_Tensor *fill_input_tensor(const vector<Mat> &training_set)
