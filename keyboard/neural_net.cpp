@@ -37,6 +37,16 @@ pair<unordered_map<string, Mat>, vector<string> > read_data(string filename)
     return(make_pair(matrices, filenames));
 }
 
+TF_Tensor *i32_tensor(const int64_t *dims, int num_dims, const int32_t *values)
+{
+    int64_t num_values = 1;
+    for(int i = 0; i < num_dims; i++)
+	num_values *= dims[i];
+    TF_Tensor *t = TF_AllocateTensor(TF_INT32, dims, num_dims, sizeof(int32_t) * num_values);
+    memcpy(TF_TensorData(t), values, sizeof(int32_t) * num_values);
+    return(t);
+}
+
 TF_Output placeholder(TF_Graph *graph, TF_Status *s, const char *name,
 		      TF_DataType dtype)
 {
@@ -48,12 +58,15 @@ TF_Output placeholder(TF_Graph *graph, TF_Status *s, const char *name,
     return(output);
 }
 
-TF_Output constant(TF_Graph *graph, TF_Status *s, const char *name,
-		   TF_DataType dtype, const void *values, size_t value_size)
+TF_Output i32_const_arr(TF_Graph *graph, TF_Status *s, const char *name,
+			const int32_t *values, int value_size)
 {
     TF_OperationDescription *desc = TF_NewOperation(graph, "Const", name);
-    TF_SetAttrType(desc, "dtype", dtype);
-    TF_SetAttrType(	
+    const int64_t dims[2];
+    dims[0] = 1;
+    dims[1] = value_size;
+    TF_Tensor *tensor = i32_tensor(dims, 2, values);
+    TF_SetAttrType(desc, "dtype", TF_INT32);
 }
 
 TF_Output reshape(TF_Graph *graph, TF_Status *s, const char *name,
