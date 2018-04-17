@@ -321,13 +321,13 @@ int main(int argc, char** argv)
     
     waitKey(0);
 #else
-    auto data_pair = read_data("data.yml");
+/*    auto data_pair = read_data("data.yml");
     auto data = data_pair.first;
     auto filenames = data_pair.second;
     for(const auto &pair : data)
 	cout << pair.first << endl;
     for(int i = 0; i < 10; i++)
-	cout << filenames[i] << endl;
+    cout << filenames[i] << endl;*/
     cnn_model();
 #endif
     return(0);
